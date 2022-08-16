@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
  * Useful for simple vesting schedules like "advisors get all of their tokens
  * after 1 year".
  */
-contract ChubbyFiveERC20TokenTimeLock {
+contract MainLock {
     using SafeERC20 for IERC20;
 
     // ERC20 basic token contract being held
