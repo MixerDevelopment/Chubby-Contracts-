@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract ChubbyFive is ERC1155, Ownable {
+contract NFT is ERC1155, Ownable {
     
     using Strings for uint256;
 
@@ -17,8 +17,8 @@ contract ChubbyFive is ERC1155, Ownable {
     uint256 public totalPaid;
     uint256 private _tokenIds;
     uint256 public adminCounter;
-    uint256 public whitelistCounter;    
     uint256 public blacklistCounter;
+    uint256 public privatelistCounter;    
     uint256 public mintAmountPerUser = 5;
     uint256 public maxTotalMintAmount = 13;    
     uint256 public mintCost = 0.5 ether;
@@ -44,21 +44,22 @@ contract ChubbyFive is ERC1155, Ownable {
         address creator;
         uint256 quantity;
         address holder;
-    }
+    }    
 
-    struct wl {
-        bool wlStatus;
-        uint256 wlMintAmount;
-        uint256 wlTransferFee;
-        uint256 wlNFTMintCost;
+     //private user info
+    struct PUserInfo {
+        bool status;
+        uint256 mintAmount;
+        uint256 transferFee;
+        uint256 nftMintCost;
     }
-
-    mapping(uint256 => Item) private _items;
-    mapping(address => wl) private _whitelist;
+    
+    mapping(uint256 => Item) private _items;    
     mapping(address => bool) private _blacklist;
     mapping(address => adminInfo) private _admins;
     mapping(address => bool) private _marketplaces;    
     mapping(address => uint256[]) private _adrToIds;
+    mapping(address => PUserInfo) private _privatelist;
     mapping(address => uint256) private _amountsNFTMinted;
     mapping(uint256 => metadataInfo) private _updateMetadata;
 
@@ -99,17 +100,17 @@ contract ChubbyFive is ERC1155, Ownable {
         require(!paused, "mint is paused");
         require(_tokenIds + mintAmount_ <= maxTotalMintAmount, "mint amount is trying to mint non-collection id");
 
-        if (_whitelist[msg.sender].wlStatus) {
+        if (_privatelist[msg.sender].status) {
             require(
-                msg.value >= _whitelist[msg.sender].wlNFTMintCost * mintAmount_,
+                msg.value >= _privatelist[msg.sender].nftMintCost * mintAmount_,
                 "Insufficient funds for mint"
             );
             
             require(
-                _amountsNFTMinted[msg.sender] + mintAmount_ <= _whitelist[msg.sender].wlMintAmount,
+                _amountsNFTMinted[msg.sender] + mintAmount_ <= _privatelist[msg.sender].mintAmount,
                 "nft collection amount is exceeded"
             );
-            totalPaid += mintAmount_ * _whitelist[msg.sender].wlNFTMintCost;
+            totalPaid += mintAmount_ * _privatelist[msg.sender].nftMintCost;
         } else {
             require(msg.value >= mintCost * mintAmount_, "Insufficient funds for mint");
             require(
@@ -211,11 +212,11 @@ contract ChubbyFive is ERC1155, Ownable {
         }
         require(from_ == msg.sender, "not allowance");
                 
-        if (_whitelist[msg.sender].wlStatus) {
-            require( msg.value >= _whitelist[msg.sender].wlTransferFee * ids_.length,
+        if (_privatelist[msg.sender].status) {
+            require( msg.value >= _privatelist[msg.sender].transferFee * ids_.length,
                 "Insufficient funds for batchTransfer"
             );
-            totalPaid += ids_.length * _whitelist[msg.sender].wlTransferFee;
+            totalPaid += ids_.length * _privatelist[msg.sender].transferFee;
         } else {
             require( msg.value >= transferFee * ids_.length,
                 "Insufficient funds for batchTransfer"
@@ -262,12 +263,12 @@ contract ChubbyFive is ERC1155, Ownable {
     ) external blacklistControl(to_) issAddress(to_) payable {        
         require(from_ == msg.sender, "not allowance");
         require(amount_ == 1, "amount has to be 1");
-        if (_whitelist[msg.sender].wlMintAmount > 0) {
+        if (_privatelist[msg.sender].mintAmount > 0) {
             require(
-                msg.value >= _whitelist[msg.sender].wlTransferFee,
+                msg.value >= _privatelist[msg.sender].transferFee,
                 "Insufficient funds for transfer"
             );
-            totalPaid += _whitelist[msg.sender].wlTransferFee;
+            totalPaid += _privatelist[msg.sender].transferFee;
         } else {
             require(msg.value >= transferFee, "Insufficient funds for transfer");
             totalPaid += transferFee;
@@ -311,7 +312,7 @@ contract ChubbyFive is ERC1155, Ownable {
         _items[id].holder = to;                
     }    
 
-    function putMintCost(uint256 newMintCost_) internal onlyOwner {
+    function putMintCost(uint256 newMintCost_) external onlyOwner {
         mintCost = newMintCost_;
     }
 
@@ -323,7 +324,7 @@ contract ChubbyFive is ERC1155, Ownable {
         _baseExtension = newBaseExtension_;
     }
 
-    function postAddWhitelistMember(
+    function postAddPrivatelistMember(
         address user_,
         uint256 mintAmount_,
         uint256 nftTransferFee_,
@@ -331,20 +332,19 @@ contract ChubbyFive is ERC1155, Ownable {
     ) external onlyOwnerorAdmin issAddress(user_) blacklistControl(user_) {
          
         require(user_ != owner(), "Not possible to add owner");
-        require(!_admins[user_].nowAdmin, "Not possible to add admin");       
-        require(!_whitelist[user_].wlStatus, "Already in whitelist");
+        require(!_admins[user_].nowAdmin, "Not possible to add admin");                
                
-        _whitelist[user_].wlMintAmount = mintAmount_;
-        _whitelist[user_].wlTransferFee = nftTransferFee_;
-        _whitelist[user_].wlNFTMintCost = nftMintCost_;
-        _whitelist[user_].wlStatus = true;
-        whitelistCounter++;
+        _privatelist[user_].mintAmount = mintAmount_;
+        _privatelist[user_].transferFee = nftTransferFee_;
+        _privatelist[user_].nftMintCost = nftMintCost_;
+        _privatelist[user_].status = true;
+        privatelistCounter++;
     }
 
-    function deleteWhitelistMember(address user_) external onlyOwnerorAdmin issAddress(user_) {        
-        require(_whitelist[user_].wlStatus, "User is not in whitelist");
-        delete _whitelist[user_];
-        whitelistCounter--;
+    function deletePrivatelistMember(address user_) external onlyOwnerorAdmin issAddress(user_) {        
+        require(_privatelist[user_].status, "User is not in privatelist");        
+        _privatelist[user_].status = false;
+        privatelistCounter--;
     }
 
     function postAddBlacklistMember(address user_) external onlyOwnerorAdmin issAddress(user_) {  
@@ -394,23 +394,23 @@ contract ChubbyFive is ERC1155, Ownable {
         return _blacklist[user_];
     }
     
-    function getWhitelistMember(address user_) external onlyOwnerorAdminorSender(user_) view
+    function getPrivatelistMember(address user_) external onlyOwnerorAdminorSender(user_) view
         returns (uint256, uint256, uint256) {                
-            require(_whitelist[user_].wlStatus, "User is not whitelisted");            
+            require(_privatelist[user_].status, "User is not privatelisted");            
             return (                
-                _whitelist[user_].wlMintAmount,
-                _whitelist[user_].wlTransferFee,
-                _whitelist[user_].wlNFTMintCost
+                _privatelist[user_].mintAmount,
+                _privatelist[user_].transferFee,
+                _privatelist[user_].nftMintCost
             );        
     }
 
     function getAvailableNFTs(address user_) external onlyOwnerorAdminorSender(user_) view
         returns (uint256, uint256, uint256) {
-        if (_whitelist[user_].wlStatus) {            
+        if (_privatelist[user_].status) {            
             return (
-                _whitelist[user_].wlMintAmount - _amountsNFTMinted[user_],
-                _whitelist[user_].wlTransferFee,
-                _whitelist[user_].wlNFTMintCost
+                _privatelist[user_].mintAmount - _amountsNFTMinted[user_],
+                _privatelist[user_].transferFee,
+                _privatelist[user_].nftMintCost
             );
         } else {
             return (
